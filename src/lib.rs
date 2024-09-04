@@ -1,21 +1,24 @@
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
-mod osc;
+mod envelope;
+mod oscillator;
 
-use osc::{OscillatorType, PolyBlepOscillator};
+use envelope::ADSR;
+use oscillator::{OscillatorType, PolyBlepOscillator};
 
 struct PawWave {
     params: Arc<PawWaveParams>,
-    osc: PolyBlepOscillator,
-    gain: Smoother<f32>,
     sample_rate: f32,
+    osc: PolyBlepOscillator,
+    adsr: ADSR,
+    gain: Smoother<f32>,
 }
 
 #[derive(Params)]
 struct PawWaveParams {
-    #[id = "gain"]
-    pub gain: FloatParam,
+    #[id = "volume"]
+    pub volume: FloatParam,
 
     #[id = "waveform"]
     pub waveform: EnumParam<OscillatorType>,
@@ -25,9 +28,10 @@ impl Default for PawWave {
     fn default() -> Self {
         Self {
             params: Arc::new(PawWaveParams::default()),
-            osc: PolyBlepOscillator::new(44100.0, 440.0),
-            gain: Smoother::new(SmoothingStyle::Linear(5.0)),
             sample_rate: 44100.0,
+            osc: PolyBlepOscillator::new(44100.0, 440.0),
+            adsr: ADSR::default(),
+            gain: Smoother::new(SmoothingStyle::Linear(5.0)),
         }
     }
 }
@@ -35,8 +39,8 @@ impl Default for PawWave {
 impl Default for PawWaveParams {
     fn default() -> Self {
         Self {
-            gain: FloatParam::new(
-                "Gain",
+            volume: FloatParam::new(
+                "Volume",
                 util::db_to_gain(-15.0),
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
@@ -97,6 +101,7 @@ impl Plugin for PawWave {
 
         self.sample_rate = sample_rate;
         self.osc = PolyBlepOscillator::new(sample_rate, 440.0);
+        self.adsr = ADSR::new(0.02, 0.02, 0.5, 0.5, sample_rate);
 
         true
     }
@@ -120,10 +125,10 @@ impl Plugin for PawWave {
                 match event {
                     NoteEvent::NoteOn { note, velocity, .. } => {
                         self.osc.set_frequency(util::midi_note_to_freq(note));
-                        self.gain.set_target(self.sample_rate, velocity);
+                        self.adsr.on(velocity);
                     }
                     NoteEvent::NoteOff { .. } => {
-                        self.gain.set_target(self.sample_rate, 0.0);
+                        self.adsr.off();
                     }
                     _ => (),
                 }
@@ -131,11 +136,16 @@ impl Plugin for PawWave {
                 next_event = context.next_event();
             }
 
-            let gain = self.params.gain.smoothed.next();
+            // Get the smoothed volume
+            let volume = self.params.volume.smoothed.next();
+
+            // Compute the next adsr value
+            self.gain
+                .set_target(self.sample_rate, self.adsr.next_sample());
 
             for sample in channel_samples {
                 *sample = self.osc.next_sample(self.params.waveform.value()) * self.gain.next();
-                *sample *= gain;
+                *sample *= volume;
             }
         }
 
