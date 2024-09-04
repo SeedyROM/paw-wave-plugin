@@ -1,23 +1,47 @@
+//! This module implements a PolyBLEP (Polynomial Bandlimited Step Function) oscillator.
+//! PolyBLEP is a technique used to reduce aliasing in digital oscillators, particularly
+//! for non-sinusoidal waveforms like square, saw, and triangle waves.
+
 use std::f32::consts::PI;
 
 use nih_plug::prelude::Enum;
 
+/// Represents different types of oscillator waveforms.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Enum)]
 pub enum OscillatorType {
+    /// Sine wave oscillator
     Sine,
+    /// Square wave oscillator
     Square,
+    /// Sawtooth wave oscillator
     Saw,
+    /// Triangle wave oscillator
     Triangle,
 }
 
+/// A PolyBLEP oscillator capable of generating various waveforms with reduced aliasing.
 pub struct PolyBlepOscillator {
+    /// The sample rate of the audio system.
     sample_rate: f32,
+    /// The frequency of the oscillator.
     frequency: f32,
+    /// The current phase of the oscillator (0.0 to 1.0).
     phase: f32,
+    /// The amount to increment the phase each sample.
     phase_increment: f32,
 }
 
 impl PolyBlepOscillator {
+    /// Creates a new PolyBLEP oscillator.
+    ///
+    /// # Arguments
+    ///
+    /// * `sample_rate` - The sample rate of the audio system
+    /// * `frequency` - The initial frequency of the oscillator
+    ///
+    /// # Returns
+    ///
+    /// A new [`PolyBlepOscillator`] instance
     #[inline(always)]
     pub fn new(sample_rate: f32, frequency: f32) -> Self {
         let mut osc = Self {
@@ -30,12 +54,26 @@ impl PolyBlepOscillator {
         osc
     }
 
+    /// Sets the frequency of the oscillator.
+    ///
+    /// # Arguments
+    ///
+    /// * `frequency` - The new frequency in Hz
     #[inline(always)]
     pub fn set_frequency(&mut self, frequency: f32) {
         self.frequency = frequency;
         self.phase_increment = self.frequency / self.sample_rate;
     }
 
+    /// Applies the PolyBLEP correction to reduce aliasing at discontinuities.
+    ///
+    /// # Arguments
+    ///
+    /// * `t` - The phase at which to apply the correction
+    ///
+    /// # Returns
+    ///
+    /// The PolyBLEP correction value
     #[inline(always)]
     fn poly_blep(&self, t: f32) -> f32 {
         if t < self.phase_increment {
@@ -49,6 +87,15 @@ impl PolyBlepOscillator {
         }
     }
 
+    /// Generates the next sample of the oscillator.
+    ///
+    /// # Arguments
+    ///
+    /// * `osc_type` - The type of oscillator waveform to generate
+    ///
+    /// # Returns
+    ///
+    /// The next sample value in the range [-1.0, 1.0]
     #[inline(always)]
     pub fn next_sample(&mut self, osc_type: OscillatorType) -> f32 {
         let sample = match osc_type {

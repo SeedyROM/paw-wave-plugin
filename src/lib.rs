@@ -1,3 +1,16 @@
+//! PawWave Synthesizer Plugin
+//!
+//! This module implements a simple yet versatile monophonic synthesizer plugin called PawWave.
+//! It features:
+//! - A PolyBLEP oscillator with multiple waveform options (Sine, Square, Saw, Triangle)
+//! - An ADSR (Attack, Decay, Sustain, Release) envelope
+//! - Volume control with dB scaling
+//! - MIDI input for note events
+//! - Support for both CLAP and VST3 plugin formats
+//!
+//! The synthesizer is built using the nih-plug framework, making it compatible with various
+//! digital audio workstations (DAWs) that support CLAP or VST3 plugins.
+
 use nih_plug::prelude::*;
 use std::sync::Arc;
 
@@ -7,6 +20,7 @@ mod oscillator;
 use envelope::ADSR;
 use oscillator::{OscillatorType, PolyBlepOscillator};
 
+// Main struct for the PawWave synthesizer
 struct PawWave {
     params: Arc<PawWaveParams>,
     sample_rate: f32,
@@ -15,6 +29,7 @@ struct PawWave {
     gain: Smoother<f32>,
 }
 
+// Parameters for the PawWave synthesizer
 #[derive(Params)]
 struct PawWaveParams {
     #[id = "volume"]
@@ -29,7 +44,7 @@ impl Default for PawWave {
         Self {
             params: Arc::new(PawWaveParams::default()),
             sample_rate: 44100.0,
-            osc: PolyBlepOscillator::new(44100.0, 440.0),
+            osc: PolyBlepOscillator::new(44100.0, 440.0), // Default to 440 Hz (A4)
             adsr: ADSR::default(),
             gain: Smoother::new(SmoothingStyle::Linear(5.0)),
         }
@@ -39,9 +54,10 @@ impl Default for PawWave {
 impl Default for PawWaveParams {
     fn default() -> Self {
         Self {
+            // Volume parameter with logarithmic scaling
             volume: FloatParam::new(
                 "Volume",
-                util::db_to_gain(-15.0),
+                util::db_to_gain(-15.0), // Default to -15 dB
                 FloatRange::Skewed {
                     min: util::db_to_gain(-30.0),
                     max: util::db_to_gain(30.0),
@@ -53,32 +69,35 @@ impl Default for PawWaveParams {
             .with_value_to_string(formatters::v2s_f32_gain_to_db(2))
             .with_string_to_value(formatters::s2v_f32_gain_to_db()),
 
+            // Waveform selection parameter
             waveform: EnumParam::new("Waveform", OscillatorType::Sine),
         }
     }
 }
 
 impl Plugin for PawWave {
+    // Plugin metadata
     const NAME: &'static str = "Paw Wave";
     const VENDOR: &'static str = "SeedyROM (Zack Kollar)";
     const URL: &'static str = env!("CARGO_PKG_HOMEPAGE");
     const EMAIL: &'static str = "me@seedyrom.io";
-
     const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
+    // Supported audio I/O layouts
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[
         AudioIOLayout {
             main_input_channels: None,
-            main_output_channels: NonZeroU32::new(2),
+            main_output_channels: NonZeroU32::new(2), // Stereo output
             ..AudioIOLayout::const_default()
         },
         AudioIOLayout {
             main_input_channels: None,
-            main_output_channels: NonZeroU32::new(1),
+            main_output_channels: NonZeroU32::new(1), // Mono output
             ..AudioIOLayout::const_default()
         },
     ];
 
+    // MIDI configuration
     const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
 
@@ -99,6 +118,7 @@ impl Plugin for PawWave {
     ) -> bool {
         let sample_rate = buffer_config.sample_rate;
 
+        // Initialize components with the correct sample rate
         self.sample_rate = sample_rate;
         self.osc = PolyBlepOscillator::new(sample_rate, 440.0);
         self.adsr = ADSR::new(0.02, 0.02, 0.5, 0.5, sample_rate);
@@ -106,7 +126,9 @@ impl Plugin for PawWave {
         true
     }
 
-    fn reset(&mut self) {}
+    fn reset(&mut self) {
+        // Reset is not needed for this simple synth
+    }
 
     fn process(
         &mut self,
@@ -117,6 +139,7 @@ impl Plugin for PawWave {
         let mut next_event = context.next_event();
 
         for (sample_id, channel_samples) in buffer.iter_samples().enumerate() {
+            // Process all MIDI events for this sample
             while let Some(event) = next_event {
                 if event.timing() > sample_id as u32 {
                     break;
@@ -139,10 +162,11 @@ impl Plugin for PawWave {
             // Get the smoothed volume
             let volume = self.params.volume.smoothed.next();
 
-            // Compute the next adsr value
+            // Compute the next ADSR value
             self.gain
                 .set_target(self.sample_rate, self.adsr.next_sample());
 
+            // Generate and process audio for all channels
             for sample in channel_samples {
                 *sample = self.osc.next_sample(self.params.waveform.value()) * self.gain.next();
                 *sample *= volume;
@@ -159,16 +183,17 @@ impl ClapPlugin for PawWave {
     const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
 
-    // Don't forget to change these features
+    // CLAP-specific features
     const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::Synthesizer, ClapFeature::Stereo];
 }
 
 impl Vst3Plugin for PawWave {
     const VST3_CLASS_ID: [u8; 16] = *b"SeedyROM-PawWave";
 
-    // And also don't forget to change these categories
+    // VST3-specific categories
     const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Instrument];
 }
 
+// Export the plugin for CLAP and VST3 formats
 nih_export_clap!(PawWave);
 nih_export_vst3!(PawWave);
