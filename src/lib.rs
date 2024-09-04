@@ -151,6 +151,7 @@ impl Plugin for PawWave {
 
     fn reset(&mut self) {
         // Reset is not needed for this simple synth
+        self.gain.reset(0.0);
     }
 
     fn process(
