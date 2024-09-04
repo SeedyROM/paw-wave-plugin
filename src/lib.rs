@@ -17,7 +17,7 @@ use std::sync::Arc;
 mod envelope;
 mod oscillator;
 
-use envelope::ADSR;
+use envelope::{ADSRUpdate, ADSR};
 use oscillator::{OscillatorType, PolyBlepOscillator};
 
 // Main struct for the PawWave synthesizer
@@ -37,6 +37,15 @@ struct PawWaveParams {
 
     #[id = "waveform"]
     pub waveform: EnumParam<OscillatorType>,
+
+    #[id = "attack"]
+    pub attack: FloatParam,
+    #[id = "decay"]
+    pub decay: FloatParam,
+    #[id = "sustain"]
+    pub sustain: FloatParam,
+    #[id = "release"]
+    pub release: FloatParam,
 }
 
 impl Default for PawWave {
@@ -71,6 +80,20 @@ impl Default for PawWaveParams {
 
             // Waveform selection parameter
             waveform: EnumParam::new("Waveform", OscillatorType::Sine),
+
+            // ADSR envelope parameters
+            attack: FloatParam::new("Attack", 0.02, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(50.0))
+                .with_unit(" s"),
+            decay: FloatParam::new("Decay", 0.02, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(50.0))
+                .with_unit(" s"),
+            sustain: FloatParam::new("Sustain", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_smoother(SmoothingStyle::Linear(50.0))
+                .with_unit(" s"),
+            release: FloatParam::new("Release", 0.5, FloatRange::Linear { min: 0.0, max: 3.0 })
+                .with_smoother(SmoothingStyle::Linear(50.0))
+                .with_unit(" s"),
         }
     }
 }
@@ -161,6 +184,18 @@ impl Plugin for PawWave {
 
             // Get the smoothed volume
             let volume = self.params.volume.smoothed.next();
+            let attack = self.params.attack.smoothed.next();
+            let decay = self.params.decay.smoothed.next();
+            let sustain = self.params.sustain.smoothed.next();
+            let release = self.params.release.smoothed.next();
+
+            // Set the target ADSR values
+            self.adsr.update_params(ADSRUpdate {
+                attack: Some(attack),
+                decay: Some(decay),
+                sustain: Some(sustain),
+                release: Some(release),
+            });
 
             // Compute the next ADSR value
             self.gain

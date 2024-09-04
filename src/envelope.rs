@@ -103,6 +103,13 @@ impl ADSR {
     pub fn off(&mut self) {
         if self.note_off_sample.is_none() {
             self.note_off_sample = Some(self.current_sample);
+
+            // If the note was released before the attack phase is complete, skip to the release phase
+            if self.current_sample < self.trigger_sample + (self.attack * self.sample_rate) as usize
+            {
+                self.current_sample =
+                    self.trigger_sample + (self.attack * self.sample_rate) as usize;
+            }
         }
     }
 
